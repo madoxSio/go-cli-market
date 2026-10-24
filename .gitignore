@@ -1,0 +1,14 @@
+# Binaires compilés (make build les placera dans bin/)
+/bin/
+
+# Configuration locale : peut contenir des mots de passe
+.env
+
+# Résultats de tests et de couverture
+*.test
+coverage.out
+
+# Fichiers propres aux éditeurs et au système
+.idea/
+.vscode/
+.DS_Store
