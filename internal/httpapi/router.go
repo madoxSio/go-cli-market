@@ -12,7 +12,5 @@ func NewRouter() http.Handler {
 
 // handleHealth indique que le serveur est en vie.
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	writeJson(w, http.StatusOK, map[string]string{"status": "ok"})
 }
