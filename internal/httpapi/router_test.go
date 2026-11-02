@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"encoding/json"
 	"net/http/httptest"
 	"testing"
 )
@@ -15,9 +16,15 @@ func TestHealth(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, attendu %d", rec.Code, http.StatusOK)
 	}
-	if got, want := rec.Body.String(), `{"status":"ok"}`; got != want {
-		t.Errorf("corps = %q, attendu %q", got, want)
+
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("réponse JSON invalide : %v", err)
 	}
+	if got, want := body["status"], "ok"; got != want {
+		t.Errorf("status = %q, attendu %q", got, want)
+	}
+
 	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
 		t.Errorf("Content-Type = %q, attendu %q", got, want)
 	}
