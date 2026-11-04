@@ -2,7 +2,6 @@ package market
 
 import "errors"
 
-
 var (
 	ErrNotFound     = errors.New("introuvable")
 	ErrInvalidInput = errors.New("données invalides")

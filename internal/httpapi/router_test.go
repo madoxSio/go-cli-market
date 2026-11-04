@@ -1,8 +1,8 @@
 package httpapi
 
 import (
-	"net/http"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
