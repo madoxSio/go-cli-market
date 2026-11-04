@@ -1,12 +1,25 @@
 // Package httpapi expose l'API HTTP de la plateforme.
 package httpapi
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/madoxSio/go-cli-market/internal/auth"
+)
 
 // NewRouter construit le routeur de l'API et y enregistre toutes les routes.
-func NewRouter() http.Handler {
+func NewRouter(svc *auth.Service) http.Handler {
+	authH := &authHandler{svc: svc}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
+	mux.HandleFunc("POST /auth/register", authH.register)
+	mux.HandleFunc("POST /auth/confirm", authH.confirm)
+	mux.HandleFunc("POST /auth/confirmation-code", authH.renewConfirmation)
+	mux.HandleFunc("POST /auth/login", authH.login)
+	mux.HandleFunc("POST /auth/forgot-password", authH.forgotPassword)
+	mux.HandleFunc("POST /auth/reset-password", authH.resetPassword)
+	mux.HandleFunc("POST /auth/logout", authH.logout)
+	mux.HandleFunc("GET /auth/me", authH.me)
 	return mux
 }
 
