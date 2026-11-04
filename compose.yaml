@@ -1,12 +1,13 @@
 # PostgreSQL pour le développement.
-# Les valeurs viennent du fichier .env (copié depuis .env.example).
+# Les valeurs viennent du fichier .env s'il existe, sinon des défauts ci-dessous
+# (les mêmes que DATABASE_URL par défaut dans internal/config).
 services:
   db:
     image: postgres:17
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?à définir dans .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?à définir dans .env}
-      POSTGRES_DB: ${POSTGRES_DB:?à définir dans .env}
+      POSTGRES_USER: ${POSTGRES_USER:-market}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market}
+      POSTGRES_DB: ${POSTGRES_DB:-market}
     ports:
       - "5432:5432"
     volumes:
