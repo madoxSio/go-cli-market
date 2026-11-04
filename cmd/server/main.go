@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/madoxSio/go-cli-market/internal/auth"
 	"github.com/madoxSio/go-cli-market/internal/config"
 	"github.com/madoxSio/go-cli-market/internal/httpapi"
 	"github.com/madoxSio/go-cli-market/internal/store"
@@ -32,9 +33,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	svc, err := auth.NewService(store.NewRepository(db))
+	if err != nil {
+		slog.Error("service d'authentification", "err", err)
+		os.Exit(1)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(),
+		Handler:           httpapi.NewRouter(svc),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
