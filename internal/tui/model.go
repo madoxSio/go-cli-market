@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/madoxSio/go-cli-market/internal/apiclient"
+	"github.com/madoxSio/go-cli-market/internal/frame"
 )
 
 type screen int
@@ -39,10 +40,6 @@ type menuItem struct {
 	id, title, desc string
 }
 
-func (item menuItem) Title() string       { return item.title }
-func (item menuItem) Description() string { return item.desc }
-func (item menuItem) FilterValue() string { return item.title }
-
 type formData struct {
 	email, password, password2, code string
 }
@@ -60,7 +57,8 @@ type model struct {
 	screen    screen
 	width     int
 	height    int
-	list      list.Model
+	items     []menuItem
+	cursor    int
 	form      *huh.Form
 	formTitle string
 	pending   action
@@ -75,19 +73,16 @@ type model struct {
 	noticeLead   string
 	noticeNext   action
 	loadingText  string
-	helpView     string
+	help         viewport.Model
 }
 
 // NewModel construit l'écran d'accueil. apiURL est l'adresse du serveur HTTP.
 func NewModel(apiURL string) model {
-	spin := spinner.New()
-	spin.Spinner = spinner.Dot
-	spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#C4B5FD"))
-
 	m := model{
 		api:     apiclient.New(apiURL),
 		data:    &formData{},
-		spinner: spin,
+		spinner: frame.Client.NewSpinner(),
+		help:    viewport.New(72, 16),
 		width:   80,
 		height:  24,
 		screen:  screenMenu,
@@ -116,7 +111,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = size.Width
 		m.height = size.Height
-		m.syncListSize()
 		m.renderHelp()
 	}
 
@@ -131,8 +125,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenHelp:
 		if key, ok := msg.(tea.KeyMsg); ok && (key.String() == "enter" || key.String() == "esc") {
 			m.screen = screenMenu
+			return m, nil
 		}
-		return m, nil
+		var cmd tea.Cmd
+		m.help, cmd = m.help.Update(msg)
+		return m, cmd
 	case screenNotice:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			switch key.String() {
@@ -165,43 +162,87 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	default:
-		if key, ok := msg.(tea.KeyMsg); ok {
-			switch key.String() {
-			case "enter":
-				item, ok := m.list.SelectedItem().(menuItem)
-				if !ok {
-					return m, nil
-				}
-				return m.activate(item.id)
-			case "q":
-				return m, tea.Quit
-			}
-		}
-		var cmd tea.Cmd
-		m.list, cmd = m.list.Update(msg)
-		return m, cmd
+		return m.updateMenu(msg)
 	}
+}
+
+func (m model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch key.String() {
+	case "enter":
+		item, ok := m.current()
+		if !ok {
+			return m, nil
+		}
+		return m.activate(item.id)
+	case "q":
+		return m, tea.Quit
+	case "up", "k":
+		m.move(-m.columns())
+	case "down", "j":
+		m.move(m.columns())
+	case "left", "h":
+		m.move(-1)
+	case "right", "l":
+		m.move(1)
+	default:
+		if n, ok := menuDigit(key.String()); ok {
+			m.jump(n)
+		}
+	}
+	return m, nil
 }
 
 func (m model) View() string {
 	var body string
 	switch m.screen {
 	case screenForm:
-		body = lipgloss.JoinVertical(lipgloss.Left, formTitleStyle.Render(m.formTitle), m.formIntro(), m.form.View())
+		parts := []string{m.form.View()}
+		if intro := m.formIntro(); intro != "" {
+			parts = []string{intro, m.form.View()}
+		}
+		body = lipgloss.JoinVertical(lipgloss.Left, parts...)
 	case screenNotice:
 		body = m.noticeBody()
 	case screenHelp:
-		body = m.helpView
+		body = m.help.View()
 	case screenLoading:
-		body = m.spinner.View() + "  " + m.loadingText
+		body = m.spinner.View() + "  " + frame.Client.TextLine(m.loadingText)
 	default:
-		if m.authed {
-			body = m.accountCard() + "\n" + m.list.View()
-		} else {
-			body = m.list.View()
-		}
+		body = m.gallery()
 	}
-	return m.layout(body)
+	return frame.Client.Screen(m.width, m.height, m.heading(), m.tagline(), m.status, m.statusOK, body, m.hint())
+}
+
+func (m model) heading() string {
+	switch m.screen {
+	case screenForm:
+		return m.formTitle
+	case screenNotice:
+		return "Code de confirmation"
+	case screenHelp:
+		return "Aide"
+	case screenLoading:
+		return "Veuillez patienter"
+	default:
+		if m.authed && m.session.Email != "" {
+			return m.session.Email
+		}
+		return "Bienvenue"
+	}
+}
+
+func (m model) tagline() string {
+	if m.screen != screenMenu {
+		return ""
+	}
+	if m.authed {
+		return "Session " + m.session.Role
+	}
+	return "Plateforme d'achat"
 }
 
 func (m *model) activate(id string) (tea.Model, tea.Cmd) {
@@ -376,83 +417,63 @@ func (m *model) rememberEmail() {
 }
 
 func (m *model) useGuestMenu() {
-	m.list = newMenu("Menu", []menuItem{
+	m.setMenu([]menuItem{
 		{id: "login", title: "Se connecter", desc: "Email et mot de passe"},
-		{id: "register", title: "Créer un compte", desc: "Inscription, puis code de confirmation"},
-		{id: "confirm", title: "Confirmer l'inscription", desc: "Saisir le code affiché à l'inscription"},
-		{id: "resend", title: "Renvoyer le code", desc: "Nouveau code si le précédent a expiré"},
-		{id: "forgot", title: "Mot de passe oublié", desc: "Réinitialiser sans être connecté"},
+		{id: "register", title: "Créer un compte", desc: "Inscription, puis un code"},
+		{id: "confirm", title: "Confirmer", desc: "Saisir le code d'inscription"},
+		{id: "resend", title: "Renvoyer le code", desc: "Si le précédent a expiré"},
+		{id: "forgot", title: "Mot de passe oublié", desc: "Réinitialiser sans connexion"},
 		{id: "help", title: "Aide", desc: "Parcours d'authentification"},
 		{id: "quit", title: "Quitter", desc: "Fermer l'application"},
 	})
-	m.syncListSize()
 }
 
 func (m *model) useSessionMenu() {
-	m.list = newMenu("Mon compte", []menuItem{
+	m.setMenu([]menuItem{
 		{id: "help", title: "Aide", desc: "Raccourcis et rappels"},
-		{id: "logout", title: "Se déconnecter", desc: "Ferme la session sur le serveur"},
+		{id: "logout", title: "Se déconnecter", desc: "Ferme la session"},
 		{id: "quit", title: "Quitter", desc: "Fermer l'application"},
 	})
-	m.syncListSize()
 }
 
 func (m *model) renderHelp() {
-	m.helpView = renderMarkdown(helpMarkdown, m.contentWidth())
+	m.help.Width = m.contentWidth()
+	m.help.Height = m.helpHeight()
+	m.help.SetContent(renderMarkdown(helpMarkdown, m.contentWidth()))
 }
 
-func (m *model) syncListSize() {
-	width := m.width
-	if width < 20 {
-		width = 20
+func (m model) helpHeight() int {
+	used := 6
+	if m.status != "" {
+		used += 2
 	}
-	height := m.height - 10
-	if m.authed {
-		height -= 6
+	height := m.height - used
+	if height < 5 {
+		height = 5
 	}
-	if height < 8 {
-		height = 8
-	}
-	m.list.SetSize(width, height)
+	return height
 }
 
 func (m model) contentWidth() int {
-	width := m.width - 2
+	width := frame.Client.PanelWidth(m.width) - 2
 	if width < 24 {
 		width = 24
 	}
-	if width > 88 {
-		width = 88
-	}
 	return width
-}
-
-func (m model) layout(body string) string {
-	parts := []string{
-		titleStyle.Render("go-cli-market"),
-		subtitleStyle.Render("Plateforme d'achat — client"),
-	}
-	if m.status != "" {
-		if m.statusOK {
-			parts = append(parts, okStyle.Render(m.status))
-		} else {
-			parts = append(parts, errStyle.Render(m.status))
-		}
-	}
-	parts = append(parts, body, hintStyle.Render(m.hint()))
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m model) hint() string {
 	switch m.screen {
 	case screenForm:
-		return "entrée valider   maj+tab champ précédent   esc menu   ctrl+c quitter"
-	case screenHelp, screenNotice:
-		return "entrée continuer   esc menu   ctrl+c quitter"
+		return frame.Client.Keys("entrée", "valider", "maj+tab", "précédent", "esc", "menu", "ctrl+c", "quitter")
+	case screenHelp:
+		return frame.Client.Keys("↑↓", "défiler", "entrée", "menu", "esc", "menu", "ctrl+c", "quitter")
+	case screenNotice:
+		return frame.Client.Keys("entrée", "continuer", "esc", "menu", "ctrl+c", "quitter")
 	case screenLoading:
-		return "ctrl+c quitter"
+		return frame.Client.Keys("ctrl+c", "quitter")
 	default:
-		return "↑↓ choisir   entrée valider   q quitter"
+		return frame.Client.Keys("flèches", "naviguer", "1-9", "choisir", "entrée", "ouvrir", "q", "quitter")
 	}
 }
 
@@ -460,40 +481,106 @@ func (m model) formIntro() string {
 	if m.pendingCode == "" || (m.pending != actionConfirm && m.pending != actionReset) {
 		return ""
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, "Code à saisir", codeStyle.Render(m.pendingCode), "")
+	return lipgloss.JoinVertical(lipgloss.Left,
+		frame.Client.Faint("Code à saisir"),
+		frame.Client.Code(m.pendingCode),
+		"",
+	)
 }
 
 func (m model) noticeBody() string {
-	lines := []string{m.noticeLead, "", "Code", codeStyle.Render(m.pendingCode)}
-	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
-}
-
-func (m model) accountCard() string {
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		okStyle.Render("Session ouverte"),
-		"Email   "+m.session.Email,
-		"Rôle    "+m.session.Role,
+	card := frame.Client.Card(m.noticeLead, frame.Client.PanelWidth(m.width))
+	return lipgloss.JoinVertical(lipgloss.Left,
+		card,
 		"",
-		"Le catalogue, le panier et les commandes seront branchés ensuite.",
+		frame.Client.Faint("Code"),
+		frame.Client.Code(m.pendingCode),
 	)
-	return boxStyle.Render(content)
 }
 
-func newMenu(title string, items []menuItem) list.Model {
-	rows := make([]list.Item, len(items))
-	for i, item := range items {
-		rows[i] = item
+func (m *model) setMenu(items []menuItem) {
+	m.items = items
+	m.cursor = 0
+}
+
+func (m model) current() (menuItem, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.items) {
+		return menuItem{}, false
 	}
-	menu := list.New(rows, list.NewDefaultDelegate(), 0, 0)
-	menu.Title = title
-	menu.SetFilteringEnabled(false)
-	menu.SetShowStatusBar(false)
-	menu.DisableQuitKeybindings()
-	menu.Styles.Title = lipgloss.NewStyle().
-		Background(lipgloss.Color("#6D28D9")).
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Padding(0, 1)
-	return menu
+	return m.items[m.cursor], true
+}
+
+func (m model) panel() int {
+	return frame.Client.PanelWidth(m.width)
+}
+
+func (m model) galleryHeight() int {
+	used := 7
+	if m.tagline() != "" {
+		used++
+	}
+	if m.status != "" {
+		used += 2
+	}
+	height := m.height - used
+	if height < cardFloor {
+		height = cardFloor
+	}
+	return height
+}
+
+const cardFloor = 5
+
+func (m model) columns() int {
+	cols, _ := frame.Client.GridShape(len(m.items), m.panel(), m.galleryHeight())
+	if cols < 1 {
+		return 1
+	}
+	return cols
+}
+
+func (m *model) move(delta int) {
+	if len(m.items) == 0 || delta == 0 {
+		return
+	}
+	next := m.cursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= len(m.items) {
+		next = len(m.items) - 1
+	}
+	m.cursor = next
+}
+
+func (m *model) jump(local int) {
+	_, pageSize := frame.Client.GridShape(len(m.items), m.panel(), m.galleryHeight())
+	if pageSize < 1 || local < 0 {
+		return
+	}
+	page := 0
+	if m.cursor >= 0 {
+		page = m.cursor / pageSize
+	}
+	index := page*pageSize + local
+	if index >= 0 && index < len(m.items) {
+		m.cursor = index
+	}
+}
+
+func (m model) gallery() string {
+	choices := make([]frame.Choice, len(m.items))
+	for i, item := range m.items {
+		choices[i] = frame.Choice{Title: item.title, Detail: item.desc}
+	}
+	return frame.Client.Gallery(choices, m.cursor, m.panel(), m.galleryHeight())
+}
+
+func menuDigit(key string) (int, bool) {
+	if len(key) != 1 || key[0] < '1' || key[0] > '9' {
+		return 0, false
+	}
+	return int(key[0] - '1'), true
 }
 
 func loadingText(kind action) string {

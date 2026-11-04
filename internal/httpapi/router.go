@@ -20,6 +20,11 @@ func NewRouter(svc *auth.Service) http.Handler {
 	mux.HandleFunc("POST /auth/reset-password", authH.resetPassword)
 	mux.HandleFunc("POST /auth/logout", authH.logout)
 	mux.HandleFunc("GET /auth/me", authH.me)
+	mux.HandleFunc("GET /admin/users", authH.listUsers)
+	mux.HandleFunc("POST /admin/users", authH.createUser)
+	mux.HandleFunc("PUT /admin/users/{id}", authH.updateUser)
+	mux.HandleFunc("DELETE /admin/users/{id}", authH.deleteUser)
+	mux.HandleFunc("POST /admin/users/{id}/confirm", authH.confirmUser)
 	return mux
 }
 

@@ -4,9 +4,10 @@ import "time"
 
 // User est la vue publique d'un compte, sans empreinte de mot de passe.
 type User struct {
-	ID    int64  `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	ID        int64  `json:"id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	Confirmed bool   `json:"confirmed"`
 }
 
 // Account est le compte complet manipulé par le service et le dépôt.
@@ -24,5 +25,5 @@ type Account struct {
 
 // Public retire les secrets avant de répondre au client.
 func (a Account) Public() User {
-	return User{ID: a.ID, Email: a.Email, Role: a.Role}
+	return User{ID: a.ID, Email: a.Email, Role: a.Role, Confirmed: a.Confirmed}
 }

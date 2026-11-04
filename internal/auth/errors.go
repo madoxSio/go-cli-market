@@ -12,6 +12,9 @@ var (
 	ErrAlreadyConfirmed   = errors.New("le compte est déjà confirmé")
 	ErrNotFound           = errors.New("introuvable")
 	ErrUnauthenticated    = errors.New("authentification requise")
+	ErrForbidden          = errors.New("réservé à un administrateur")
+	ErrLastAdmin          = errors.New("impossible de retirer le dernier administrateur")
+	ErrSelfDelete         = errors.New("vous ne pouvez pas supprimer votre propre compte")
 )
 
 // ValidationError signale une saisie refusée avant tout accès à la base.

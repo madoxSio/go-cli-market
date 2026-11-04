@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+
+	"github.com/madoxSio/go-cli-market/internal/frame"
 )
 
 func titleFor(kind action) string {
@@ -102,8 +104,8 @@ func (m *model) buildForm(kind action) *huh.Form {
 
 func (m *model) finishForm(groups ...*huh.Group) *huh.Form {
 	return huh.NewForm(groups...).
-		WithTheme(huh.ThemeCatppuccin()).
-		WithShowHelp(true).
+		WithTheme(frame.Client.FormTheme()).
+		WithShowHelp(false).
 		WithWidth(m.contentWidth())
 }
 

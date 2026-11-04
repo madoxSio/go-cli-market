@@ -8,15 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // User est le compte renvoyé par l'API, sans secret.
 type User struct {
-	ID    int64  `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	ID        int64  `json:"id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	Confirmed bool   `json:"confirmed"`
 }
 
 // Error est une erreur métier renvoyée par l'API.
@@ -120,6 +122,41 @@ func (c *Client) Logout(ctx context.Context) error {
 	err := c.do(ctx, http.MethodPost, "/auth/logout", nil, nil, true)
 	c.token = ""
 	return err
+}
+
+// ListUsers demande la liste des comptes. Réservé à un administrateur.
+func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
+	var users []User
+	err := c.do(ctx, http.MethodGet, "/admin/users", nil, &users, true)
+	return users, err
+}
+
+// CreateUser crée un compte depuis l'administration.
+func (c *Client) CreateUser(ctx context.Context, email, password, role string, confirmed bool) (User, error) {
+	var user User
+	err := c.do(ctx, http.MethodPost, "/admin/users", map[string]any{
+		"email": email, "password": password, "role": role, "confirmed": confirmed,
+	}, &user, true)
+	return user, err
+}
+
+// UpdateUser modifie un compte. Un mot de passe vide ne change pas l'empreinte.
+func (c *Client) UpdateUser(ctx context.Context, id int64, email, password, role string) (User, error) {
+	var user User
+	err := c.do(ctx, http.MethodPut, "/admin/users/"+strconv.FormatInt(id, 10), map[string]string{
+		"email": email, "password": password, "role": role,
+	}, &user, true)
+	return user, err
+}
+
+// DeleteUser supprime un compte.
+func (c *Client) DeleteUser(ctx context.Context, id int64) error {
+	return c.do(ctx, http.MethodDelete, "/admin/users/"+strconv.FormatInt(id, 10), nil, nil, true)
+}
+
+// ConfirmUser confirme un compte sans code.
+func (c *Client) ConfirmUser(ctx context.Context, id int64) error {
+	return c.do(ctx, http.MethodPost, "/admin/users/"+strconv.FormatInt(id, 10)+"/confirm", nil, nil, true)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, in, out any, withAuth bool) error {
