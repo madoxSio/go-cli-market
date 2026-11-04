@@ -9,8 +9,8 @@ endif
 
 DATABASE_URL ?= postgres://market:market@localhost:5432/market?sslmode=disable
 HTTP_ADDR ?= :8080
-
-.PHONY: help db-up db-down db-reset db-wait db-logs db-psql server build test vet fmt tidy
+API_URL ?= http://localhost:8080
+.PHONY: help db-up db-down db-reset db-wait db-logs db-psql server client build test vet fmt tidy
 
 .DEFAULT_GOAL := help
 
@@ -26,8 +26,11 @@ help:
 	@echo "Serveur HTTP"
 	@echo "  make server     Lance l'API sur $(HTTP_ADDR)"
 	@echo ""
+	@echo "Client"
+	@echo "  make client     Lance l'interface terminal (API : $(API_URL))"
+	@echo ""
 	@echo "Outils"
-	@echo "  make build      Compile le serveur dans bin/"
+	@echo "  make build      Compile le serveur et le client dans bin/"
 	@echo "  make test       Lance les tests"
 	@echo "  make vet        Lance go vet"
 	@echo "  make fmt        Formate le code"
@@ -59,9 +62,14 @@ db-psql:
 server:
 	DATABASE_URL='$(DATABASE_URL)' HTTP_ADDR='$(HTTP_ADDR)' $(GO) run ./cmd/server
 
+client:
+	API_URL='$(API_URL)' $(GO) run ./cmd/client
+
+
 build:
 	mkdir -p bin
 	$(GO) build -o bin/server ./cmd/server
+	$(GO) build -o bin/client ./cmd/client
 
 test:
 	$(GO) test ./...
