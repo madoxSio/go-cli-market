@@ -61,14 +61,18 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (auth.Accoun
 func (r *Repository) UpdateAccount(ctx context.Context, account auth.Account) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE users SET
-			password_hash = $1,
-			confirmed = $2,
-			confirmation_code = $3,
-			confirmation_expires_at = $4,
-			reset_code = $5,
-			reset_expires_at = $6
-		WHERE id = $7`,
+			email = $1,
+			password_hash = $2,
+			role = $3,
+			confirmed = $4,
+			confirmation_code = $5,
+			confirmation_expires_at = $6,
+			reset_code = $7,
+			reset_expires_at = $8
+		WHERE id = $9`,
+		account.Email,
 		account.PasswordHash,
+		account.Role,
 		account.Confirmed,
 		nullString(account.ConfirmationCode),
 		nullTime(account.ConfirmationExpires),
@@ -77,6 +81,10 @@ func (r *Repository) UpdateAccount(ctx context.Context, account auth.Account) er
 		account.ID,
 	)
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return auth.ErrEmailTaken
+		}
 		return err
 	}
 	n, err := res.RowsAffected()
@@ -115,6 +123,47 @@ func (r *Repository) FindBySession(ctx context.Context, token string, now time.T
 func (r *Repository) DeleteSession(ctx context.Context, token string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
 	return err
+}
+
+func (r *Repository) FindByID(ctx context.Context, id int64) (auth.Account, error) {
+	row := r.db.QueryRowContext(ctx, userSelect+` WHERE id = $1`, id)
+	account, err := scanAccount(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.Account{}, auth.ErrNotFound
+	}
+	return account, err
+}
+
+func (r *Repository) ListAccounts(ctx context.Context) ([]auth.Account, error) {
+	rows, err := r.db.QueryContext(ctx, userSelect+` ORDER BY email`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var accounts []auth.Account
+	for rows.Next() {
+		account, err := scanAccount(rows)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts, rows.Err()
+}
+
+func (r *Repository) DeleteAccount(ctx context.Context, id int64) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
 }
 
 func (r *Repository) DeleteUserSessions(ctx context.Context, userID int64) error {

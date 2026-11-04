@@ -163,11 +163,11 @@ func writeAuthError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &validation):
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": validation.Error()})
-	case errors.Is(err, auth.ErrEmailTaken), errors.Is(err, auth.ErrAlreadyConfirmed):
+	case errors.Is(err, auth.ErrEmailTaken), errors.Is(err, auth.ErrAlreadyConfirmed), errors.Is(err, auth.ErrLastAdmin), errors.Is(err, auth.ErrSelfDelete):
 		writeJson(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrUnauthenticated):
 		writeJson(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
-	case errors.Is(err, auth.ErrNotConfirmed):
+	case errors.Is(err, auth.ErrNotConfirmed), errors.Is(err, auth.ErrForbidden):
 		writeJson(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 	case errors.Is(err, auth.ErrInvalidCode), errors.Is(err, auth.ErrExpiredCode):
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

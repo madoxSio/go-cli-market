@@ -2,9 +2,7 @@ package tui
 
 import "github.com/charmbracelet/glamour"
 
-const helpMarkdown = `# Aide
-
-Le client envoie chaque action au serveur HTTP. Le mot de passe n'est jamais stocké en clair : le serveur conserve une empreinte bcrypt.
+const helpMarkdown = `Le client envoie chaque action au serveur HTTP. Le mot de passe n'est jamais stocké en clair : le serveur conserve une empreinte bcrypt.
 
 ## Inscription
 

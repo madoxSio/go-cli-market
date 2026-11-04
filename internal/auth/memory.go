@@ -60,6 +60,9 @@ func (m *MemoryRepository) UpdateAccount(_ context.Context, account Account) err
 		return ErrNotFound
 	}
 	if previous != account.Email {
+		if _, taken := m.byEmail[account.Email]; taken {
+			return ErrEmailTaken
+		}
 		delete(m.byEmail, previous)
 	}
 	m.byEmail[account.Email] = account
@@ -95,6 +98,38 @@ func (m *MemoryRepository) DeleteSession(_ context.Context, token string) error 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.sessions, token)
+	return nil
+}
+
+func (m *MemoryRepository) FindByID(_ context.Context, id int64) (Account, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	email, ok := m.byID[id]
+	if !ok {
+		return Account{}, ErrNotFound
+	}
+	return m.byEmail[email], nil
+}
+
+func (m *MemoryRepository) ListAccounts(_ context.Context) ([]Account, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	accounts := make([]Account, 0, len(m.byEmail))
+	for _, account := range m.byEmail {
+		accounts = append(accounts, account)
+	}
+	return accounts, nil
+}
+
+func (m *MemoryRepository) DeleteAccount(_ context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	email, ok := m.byID[id]
+	if !ok {
+		return ErrNotFound
+	}
+	delete(m.byID, id)
+	delete(m.byEmail, email)
 	return nil
 }
 

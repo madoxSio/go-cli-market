@@ -38,6 +38,11 @@ func main() {
 		slog.Error("service d'authentification", "err", err)
 		os.Exit(1)
 	}
+	if err := svc.EnsureAdmin(context.Background(), cfg.AdminEmail, cfg.AdminPassword); err != nil {
+		slog.Error("compte administrateur", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("compte administrateur prêt", "email", cfg.AdminEmail)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
