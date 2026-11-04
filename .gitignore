@@ -1,6 +1,12 @@
 # Binaires compilés (make build les placera dans bin/)
 /bin/
 
+# Toolchain Go locale, clé d'hôte SSH générée par Wish
+.toolchain/
+.ssh/
+id_ed25519
+id_ed25519.pub
+
 # Configuration locale : peut contenir des mots de passe
 .env
 
