@@ -10,7 +10,10 @@ endif
 DATABASE_URL ?= postgres://market:market@localhost:5432/market?sslmode=disable
 HTTP_ADDR ?= :8080
 API_URL ?= http://localhost:8080
-.PHONY: help db-up db-down db-reset db-wait db-logs db-psql server client build test vet fmt tidy
+SSH_ADDR ?= :2222
+SSH_HOST_KEY ?= .ssh/server_ed25519
+
+.PHONY: help db-up db-down db-reset db-wait db-logs db-psql server client sshd build test vet fmt tidy
 
 .DEFAULT_GOAL := help
 
@@ -28,9 +31,11 @@ help:
 	@echo ""
 	@echo "Client"
 	@echo "  make client     Lance l'interface terminal (API : $(API_URL))"
+	@echo "  make sshd       Lance l'accès SSH Wish sur $(SSH_ADDR)"
+	@echo "                  puis : ssh -p 2222 localhost"
 	@echo ""
 	@echo "Outils"
-	@echo "  make build      Compile le serveur et le client dans bin/"
+	@echo "  make build      Compile server, client et sshd dans bin/"
 	@echo "  make test       Lance les tests"
 	@echo "  make vet        Lance go vet"
 	@echo "  make fmt        Formate le code"
@@ -65,11 +70,14 @@ server:
 client:
 	API_URL='$(API_URL)' $(GO) run ./cmd/client
 
+sshd:
+	API_URL='$(API_URL)' SSH_ADDR='$(SSH_ADDR)' SSH_HOST_KEY='$(SSH_HOST_KEY)' $(GO) run ./cmd/sshd
 
 build:
 	mkdir -p bin
 	$(GO) build -o bin/server ./cmd/server
 	$(GO) build -o bin/client ./cmd/client
+	$(GO) build -o bin/sshd ./cmd/sshd
 
 test:
 	$(GO) test ./...
