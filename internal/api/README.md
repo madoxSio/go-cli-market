@@ -179,7 +179,7 @@ Le prix TTC est arrondi **par unité**, puis multiplié par la quantité. La liv
 
 | Méthode | Route | Corps | Réponse |
 | --- | --- | --- | --- |
-| GET | `/admin/orders` | — (paramètre facultatif `?status=paid`) | `[Order, …]` de tous les clients, avec `user_email` |
+| GET | `/admin/orders` | — (paramètre facultatif `?status=paid` ; statut inconnu → 400) | `[Order, …]` de tous les clients, la plus récente d'abord |
 | POST | `/admin/orders` | `CreateOrderRequest` : commande pour un client | **201** `Order` au statut `pending` |
 | PATCH | `/admin/orders/{ref}/status` | `UpdateStatusRequest` | `Order` |
 
@@ -187,6 +187,7 @@ Le prix TTC est arrondi **par unité**, puis multiplié par la quantité. La liv
 ```json
 {"user_id": 6, "items": [{"product_ref": "PDT-7D2K8N", "quantity": 1}]}
 ```
+`user_id` obligatoire (l'`id` renvoyé par `GET /admin/users`) ; client inconnu → 404. Un même produit cité deux fois voit ses quantités additionnées. Prix : ceux du catalogue au moment de la création.
 
 `UpdateStatusRequest` :
 ```json
@@ -221,4 +222,4 @@ Statut inconnu → 400. Transition interdite → 409. `reason` obligatoire pour 
   "updated_at": "2026-11-05T15:00:00+01:00"
 }
 ```
-`user_email` (routes admin), `cancel_reason` (si annulée) et `card_last4` (si payée par carte) sont absents quand ils sont vides. Les prix des lignes sont **copiés** au moment de la commande : un changement de prix du produit ne modifie pas l'historique.
+`user_email` est l'email du client. `cancel_reason` (si annulée) et `card_last4` (si payée par carte) sont absents quand ils sont vides. Les prix des lignes sont **copiés** au moment de la commande : un changement de prix du produit ne modifie pas l'historique.
