@@ -13,7 +13,7 @@ Les types Go correspondants sont dans `internal/market` (produit, panier, comman
 | Noms des champs | `snake_case` (`product_ref`, `price_ttc`) |
 | **Montants** | **Entiers en centimes d'euro** : `4999` = 49,99 €. Jamais de nombre à virgule. Pour afficher : `fmt.Sprintf("%d,%02d €", c/100, c%100)` ou `market.Cents(c).String()` |
 | **Taux de TVA** | **Points de base** : `2000` = 20 %, `550` = 5,5 % |
-| Dates | Texte RFC 3339 : `"2026-11-05T14:30:00+01:00"` |
+| Dates | Texte RFC 3339, en UTC (suffixe `Z`), avec fractions de seconde : `"2026-11-05T10:38:27.614055Z"`. À convertir en heure locale pour l'affichage (`t.Local()` en Go) |
 | Identifiants métier | `PDT-XXXXXX` (produit), `BSK-XXXXXX` (panier), `CMD-XXXXXX` (commande) : 6 caractères `A-Z0-9` |
 | Authentification | En-tête `Authorization: Bearer <token>`, le jeton renvoyé par `POST /auth/login` |
 | Erreurs | Corps `{"error": "message lisible en français"}`, avec le code HTTP ci-dessous |
@@ -118,7 +118,7 @@ Réponse : **201** `Product` (avec sa `ref` générée).
   "price_ht": 4999,
   "vat_rate": 2000,
   "price_ttc": 5999,
-  "created_at": "2026-11-05T14:30:00+01:00"
+  "created_at": "2026-11-05T10:38:27.614055Z"
 }
 ```
 `price_ttc` est calculé par le serveur (arrondi au centime le plus proche).
@@ -218,8 +218,8 @@ Statut inconnu → 400. Transition interdite → 409. `reason` obligatoire pour 
   "items": [ /* mêmes lignes que le panier, prix figés au moment de la commande */ ],
   "total_ttc": 11998,
   "card_last4": "4242",
-  "created_at": "2026-11-05T14:30:00+01:00",
-  "updated_at": "2026-11-05T15:00:00+01:00"
+  "created_at": "2026-11-05T10:46:53.743003Z",
+  "updated_at": "2026-11-05T11:02:10.120544Z"
 }
 ```
 `user_email` est l'email du client. `cancel_reason` (si annulée) et `card_last4` (si payée par carte) sont absents quand ils sont vides. Les prix des lignes sont **copiés** au moment de la commande : un changement de prix du produit ne modifie pas l'historique.
