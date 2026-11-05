@@ -22,6 +22,7 @@ const (
 // Order est une commande : les lignes du panier au moment du paiement (prix figés),
 // le statut et, si elle a été payée par carte, les 4 derniers chiffres de la carte.
 type Order struct {
+	ID           int64       `json:"-"`
 	Ref          string      `json:"ref"`
 	UserID       int64       `json:"user_id"`
 	UserEmail    string      `json:"user_email,omitempty"`
