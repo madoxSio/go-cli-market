@@ -3,13 +3,17 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/madoxSio/go-cli-market/internal/auth"
+	"github.com/madoxSio/go-cli-market/internal/store"
 )
 
 // NewRouter construit le routeur de l'API et y enregistre toutes les routes.
-func NewRouter(svc *auth.Service) http.Handler {
+// svc gère les comptes et les sessions, shop le catalogue, les paniers et les commandes.
+func NewRouter(svc *auth.Service, shop *store.Market) http.Handler {
 	authH := &authHandler{svc: svc}
+	shopH := &shopHandler{svc: svc, shop: shop, now: time.Now}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("POST /auth/register", authH.register)
@@ -25,6 +29,22 @@ func NewRouter(svc *auth.Service) http.Handler {
 	mux.HandleFunc("PUT /admin/users/{id}", authH.updateUser)
 	mux.HandleFunc("DELETE /admin/users/{id}", authH.deleteUser)
 	mux.HandleFunc("POST /admin/users/{id}/confirm", authH.confirmUser)
+
+	mux.HandleFunc("GET /products", shopH.listProducts)
+	mux.HandleFunc("GET /products/{ref}", shopH.getProduct)
+	mux.HandleFunc("POST /admin/products", shopH.createProduct)
+
+	mux.HandleFunc("GET /cart", shopH.getCart)
+	mux.HandleFunc("POST /cart/items", shopH.addCartItems)
+	mux.HandleFunc("PATCH /cart/items", shopH.setCartItems)
+	mux.HandleFunc("DELETE /cart/items/{productRef}", shopH.removeCartItem)
+	mux.HandleFunc("POST /cart/checkout", shopH.checkout)
+
+	mux.HandleFunc("GET /orders", shopH.listMyOrders)
+	mux.HandleFunc("GET /orders/{ref}", shopH.getMyOrder)
+	mux.HandleFunc("GET /admin/orders", shopH.listAllOrders)
+	mux.HandleFunc("POST /admin/orders", shopH.createOrder)
+	mux.HandleFunc("PATCH /admin/orders/{ref}/status", shopH.updateOrderStatus)
 	return mux
 }
 

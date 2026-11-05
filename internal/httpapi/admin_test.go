@@ -17,7 +17,7 @@ func TestAdminUserRoutes(t *testing.T) {
 	if err := svc.EnsureAdmin(t.Context(), "admin@market.local", "adminadmin"); err != nil {
 		t.Fatal(err)
 	}
-	h := NewRouter(svc)
+	h := NewRouter(svc, nil)
 
 	denied := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	deniedRec := httptest.NewRecorder()

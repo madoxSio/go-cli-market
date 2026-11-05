@@ -25,7 +25,7 @@ SERVER_PID := $(RUN_DIR)/server.pid
 	db-up db-down db-reset db-wait db-logs db-psql \
 	server server-bg server-stop require-server \
 	client admin sshd admin-sshd ssh-client ssh-admin \
-	build test test-db vet fmt check tidy
+	build test test-db race cover vet fmt check tidy
 
 .DEFAULT_GOAL := help
 
@@ -58,6 +58,8 @@ help:
 	@echo "  make check       gofmt + go vet + go test (à lancer avant chaque commit)"
 	@echo "  make test        Lance les tests (sans base : les tests store sont ignorés)"
 	@echo "  make test-db     Lance les tests, y compris ceux contre PostgreSQL"
+	@echo "  make race        Lance les tests avec le détecteur d'accès concurrents"
+	@echo "  make cover       Mesure la couverture des tests (détail : go tool cover -html=coverage.out)"
 	@echo "  make build       Compile server, client, sshd, admin et admin-sshd dans bin/"
 	@echo "  make vet         Lance go vet"
 	@echo "  make fmt         Formate le code"
@@ -183,6 +185,13 @@ test:
 
 test-db:
 	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(GO) test -count=1 ./...
+
+race:
+	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(GO) test -count=1 -race ./...
+
+cover:
+	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(GO) test -count=1 -coverprofile=coverage.out ./...
+	$(GO) tool cover -func=coverage.out | tail -n 1
 
 vet:
 	$(GO) vet ./...

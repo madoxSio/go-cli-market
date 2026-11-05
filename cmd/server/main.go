@@ -46,7 +46,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(svc),
+		Handler:           httpapi.NewRouter(svc, store.NewMarket(db)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
