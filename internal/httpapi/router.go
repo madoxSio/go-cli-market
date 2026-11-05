@@ -33,6 +33,11 @@ func NewRouter(svc *auth.Service, shop *store.Market) http.Handler {
 	mux.HandleFunc("GET /products", shopH.listProducts)
 	mux.HandleFunc("GET /products/{ref}", shopH.getProduct)
 	mux.HandleFunc("POST /admin/products", shopH.createProduct)
+
+	mux.HandleFunc("GET /cart", shopH.getCart)
+	mux.HandleFunc("POST /cart/items", shopH.addCartItems)
+	mux.HandleFunc("PATCH /cart/items", shopH.setCartItems)
+	mux.HandleFunc("DELETE /cart/items/{productRef}", shopH.removeCartItem)
 	return mux
 }
 
