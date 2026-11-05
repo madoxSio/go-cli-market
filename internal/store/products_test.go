@@ -16,6 +16,8 @@ func testCategory(t *testing.T, m *Market) string {
 	t.Helper()
 	category := fmt.Sprintf("test-%d", time.Now().UnixNano())
 	t.Cleanup(func() {
+		// Les lignes de panier qui pointent vers ces produits empêcheraient leur suppression.
+		_, _ = m.db.Exec(`DELETE FROM cart_items WHERE product_id IN (SELECT id FROM products WHERE category = $1)`, category)
 		_, _ = m.db.Exec(`DELETE FROM products WHERE category = $1`, category)
 	})
 	return category
