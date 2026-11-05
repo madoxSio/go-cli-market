@@ -15,7 +15,7 @@ func testRouter(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewRouter(svc)
+	return NewRouter(svc, nil)
 }
 
 func TestHealth(t *testing.T) {
