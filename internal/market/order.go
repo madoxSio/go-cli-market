@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 )
 
 // OrderStatus est l'état d'une commande. Sa valeur est celle stockée en base et échangée en JSON.
@@ -17,6 +18,21 @@ const (
 	StatusDelivered OrderStatus = "delivered"
 	StatusCancelled OrderStatus = "cancelled"
 )
+
+// Order est une commande : les lignes du panier au moment du paiement (prix figés),
+// le statut et, si elle a été payée par carte, les 4 derniers chiffres de la carte.
+type Order struct {
+	Ref          string      `json:"ref"`
+	UserID       int64       `json:"user_id"`
+	UserEmail    string      `json:"user_email,omitempty"`
+	Status       OrderStatus `json:"status"`
+	CancelReason string      `json:"cancel_reason,omitempty"`
+	Items        []Item      `json:"items"`
+	TotalTTC     Cents       `json:"total_ttc"`
+	CardLast4    string      `json:"card_last4,omitempty"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+}
 
 // transitions liste, pour chaque statut, ceux vers lesquels une commande peut passer.
 // Un statut absent de la map (livrée, annulée) est final : plus aucun changement possible.
