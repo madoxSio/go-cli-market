@@ -15,6 +15,18 @@ const helpMarkdown = `Le client envoie chaque action au serveur HTTP. Le mot de 
 
 La réinitialisation ne demande pas d'être connecté. Un code temporaire s'affiche, puis vous choisissez un nouveau mot de passe. Les sessions déjà ouvertes sont fermées.
 
+## Catalogue
+
+Une fois connecté, « Rechercher » filtre par nom, description, catégorie, prix HT ou prix TTC. Tous les champs sont facultatifs. Les prix se saisissent en euros, par exemple 49,99.
+
+## Panier et paiement
+
+Depuis une fiche produit, ajoutez une quantité. Le panier porte un identifiant BSK- et reste lié au compte. La livraison est offerte. Vous pouvez changer une quantité, retirer un produit et payer avec le numéro de carte, la date d'expiration et le CVC.
+
+## Commandes
+
+« Mes commandes » liste chaque commande avec sa date, son total et son statut : en attente, payée, en cours de livraison, livrée ou annulée. Le détail montre les produits et, en cas d'annulation, la raison. L'identifiant commence par CMD-.
+
 ## Session
 
 La connexion renvoie un jeton. Le client le renvoie dans l'en-tête Authorization jusqu'à la déconnexion.
