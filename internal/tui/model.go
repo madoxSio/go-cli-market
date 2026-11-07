@@ -12,6 +12,7 @@ import (
 
 	"github.com/madoxSio/go-cli-market/internal/apiclient"
 	"github.com/madoxSio/go-cli-market/internal/frame"
+	"github.com/madoxSio/go-cli-market/internal/market"
 )
 
 type screen int
@@ -22,6 +23,7 @@ const (
 	screenNotice
 	screenHelp
 	screenLoading
+	screenDetail
 )
 
 type action int
@@ -45,10 +47,14 @@ type formData struct {
 }
 
 type doneMsg struct {
-	kind action
-	code string
-	user apiclient.User
-	err  error
+	kind     action
+	code     string
+	user     apiclient.User
+	products []market.Product
+	cart     market.Cart
+	orders   []market.Order
+	order    market.Order
+	err      error
 }
 
 type model struct {
@@ -74,6 +80,17 @@ type model struct {
 	noticeNext   action
 	loadingText  string
 	help         viewport.Model
+
+	section     section
+	shop        *shopFields
+	products    []market.Product
+	product     market.Product
+	cart        market.Cart
+	orders      []market.Order
+	order       market.Order
+	lineRef     string
+	detail      viewport.Model
+	detailTitle string
 }
 
 // NewModel construit l'écran d'accueil. apiURL est l'adresse du serveur HTTP.
@@ -83,6 +100,8 @@ func NewModel(apiURL string) model {
 		data:    &formData{},
 		spinner: frame.Client.NewSpinner(),
 		help:    viewport.New(72, 16),
+		shop:    &shopFields{},
+		detail:  viewport.New(72, 16),
 		width:   80,
 		height:  24,
 		screen:  screenMenu,
@@ -112,6 +131,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = size.Width
 		m.height = size.Height
 		m.renderHelp()
+		m.detail.Width = m.contentWidth()
+		m.detail.Height = m.helpHeight()
 	}
 
 	switch m.screen {
@@ -130,6 +151,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.help, cmd = m.help.Update(msg)
 		return m, cmd
+	case screenDetail:
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "enter", "esc", "q":
+				return m.goBack()
+			}
+		}
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.Update(msg)
+		return m, cmd
 	case screenNotice:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			switch key.String() {
@@ -142,8 +173,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case screenForm:
 		if key, ok := msg.(tea.KeyMsg); ok && key.String() == "esc" {
-			m.screen = screenMenu
-			return m, nil
+			return m.leaveForm()
 		}
 		next, cmd := m.form.Update(msg)
 		form, ok := next.(*huh.Form)
@@ -157,8 +187,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadingText = loadingText(m.pending)
 			return m, tea.Batch(m.spinner.Tick, m.submit())
 		case huh.StateAborted:
-			m.screen = screenMenu
-			return m, nil
+			return m.leaveForm()
 		}
 		return m, cmd
 	default:
@@ -179,7 +208,14 @@ func (m model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.activate(item.id)
 	case "q":
+		if m.authed && m.section != sectionHome {
+			return m.goBack()
+		}
 		return m, tea.Quit
+	case "esc":
+		if m.authed && m.section != sectionHome {
+			return m.goBack()
+		}
 	case "up", "k":
 		m.move(-m.columns())
 	case "down", "j":
@@ -209,6 +245,8 @@ func (m model) View() string {
 		body = m.noticeBody()
 	case screenHelp:
 		body = m.help.View()
+	case screenDetail:
+		body = m.detail.View()
 	case screenLoading:
 		body = m.spinner.View() + "  " + frame.Client.TextLine(m.loadingText)
 	default:
@@ -228,6 +266,9 @@ func (m model) heading() string {
 	case screenLoading:
 		return "Veuillez patienter"
 	default:
+		if title, ok := m.shopHeading(); ok {
+			return title
+		}
 		if m.authed && m.session.Email != "" {
 			return m.session.Email
 		}
@@ -236,6 +277,9 @@ func (m model) heading() string {
 }
 
 func (m model) tagline() string {
+	if text, ok := m.shopTagline(); ok && (m.screen == screenMenu || m.screen == screenDetail) {
+		return text
+	}
 	if m.screen != screenMenu {
 		return ""
 	}
@@ -275,7 +319,7 @@ func (m *model) activate(id string) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m.openForm(actionForgot, true)
 	default:
-		return *m, nil
+		return m.activateShop(id)
 	}
 }
 
@@ -294,6 +338,9 @@ func (m *model) openForm(kind action, reset bool) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) onDone(msg doneMsg) (tea.Model, tea.Cmd) {
+	if isShop(msg.kind) {
+		return m.finishShop(msg)
+	}
 	if msg.err != nil {
 		m.status = msg.err.Error()
 		m.statusOK = false
@@ -372,6 +419,9 @@ func (m *model) onDone(msg doneMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) submit() tea.Cmd {
+	if isShop(m.pending) {
+		return m.submitShop()
+	}
 	kind := m.pending
 	email := m.data.email
 	password := m.data.password
@@ -408,6 +458,13 @@ func (m *model) signOut() {
 	m.authed = false
 	m.session = apiclient.User{}
 	m.api.SetToken("")
+	m.section = sectionHome
+	m.products = nil
+	m.product = market.Product{}
+	m.cart = market.Cart{}
+	m.orders = nil
+	m.order = market.Order{}
+	m.lineRef = ""
 	m.useGuestMenu()
 	m.screen = screenMenu
 }
@@ -429,7 +486,11 @@ func (m *model) useGuestMenu() {
 }
 
 func (m *model) useSessionMenu() {
+	m.section = sectionHome
 	m.setMenu([]menuItem{
+		{id: "search", title: "Rechercher", desc: "Nom, catégorie, prix HT ou TTC"},
+		{id: "cart", title: "Mon panier", desc: "Quantités, total TTC, livraison offerte"},
+		{id: "orders", title: "Mes commandes", desc: "Date, produits et statut"},
 		{id: "help", title: "Aide", desc: "Raccourcis et rappels"},
 		{id: "logout", title: "Se déconnecter", desc: "Ferme la session"},
 		{id: "quit", title: "Quitter", desc: "Fermer l'application"},
@@ -465,7 +526,9 @@ func (m model) contentWidth() int {
 func (m model) hint() string {
 	switch m.screen {
 	case screenForm:
-		return frame.Client.Keys("entrée", "valider", "maj+tab", "précédent", "esc", "menu", "ctrl+c", "quitter")
+		return frame.Client.Keys("entrée", "valider", "maj+tab", "précédent", "esc", "retour", "ctrl+c", "quitter")
+	case screenDetail:
+		return frame.Client.Keys("↑↓", "défiler", "esc", "retour", "q", "retour", "ctrl+c", "quitter")
 	case screenHelp:
 		return frame.Client.Keys("↑↓", "défiler", "entrée", "menu", "esc", "menu", "ctrl+c", "quitter")
 	case screenNotice:
@@ -473,11 +536,17 @@ func (m model) hint() string {
 	case screenLoading:
 		return frame.Client.Keys("ctrl+c", "quitter")
 	default:
+		if m.authed && m.section != sectionHome {
+			return frame.Client.Keys("flèches", "naviguer", "entrée", "ouvrir", "esc", "retour", "q", "retour")
+		}
 		return frame.Client.Keys("flèches", "naviguer", "1-9", "choisir", "entrée", "ouvrir", "q", "quitter")
 	}
 }
 
 func (m model) formIntro() string {
+	if intro := m.shopIntro(); intro != "" {
+		return frame.Client.Faint(intro) + "\n\n"
+	}
 	if m.pendingCode == "" || (m.pending != actionConfirm && m.pending != actionReset) {
 		return ""
 	}

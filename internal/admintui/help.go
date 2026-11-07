@@ -12,6 +12,10 @@ Le mot de passe laissé vide lors d'une modification ne change pas l'empreinte. 
 
 Vous ne pouvez pas supprimer votre propre compte, ni retirer le dernier administrateur.
 
+## Produits
+
+« Nouveau produit » envoie le nom, la catégorie, le prix HT et le taux de TVA. Le serveur attribue l'identifiant PDT- et calcule le prix TTC.
+
 ## SSH
 
 make admin-sshd ouvre cet écran sur le port 2223. Le client reste sur le port 2222.

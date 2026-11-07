@@ -31,6 +31,36 @@ func TestPriceWithVAT(t *testing.T) {
 	}
 }
 
+func TestParseEuros(t *testing.T) {
+	tests := []struct {
+		raw     string
+		want    Cents
+		wantErr bool
+	}{
+		{"49,99", 4999, false},
+		{"49.99", 4999, false},
+		{"50", 5000, false},
+		{"  10,5 ", 1050, false},
+		{"0,05", 5, false},
+		{"", 0, true},
+		{"-1", 0, true},
+		{"12,345", 0, true},
+		{"abc", 0, true},
+	}
+	for _, tt := range tests {
+		got, err := ParseEuros(tt.raw)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("ParseEuros(%q) n'a pas échoué", tt.raw)
+			}
+			continue
+		}
+		if err != nil || got != tt.want {
+			t.Errorf("ParseEuros(%q) = %d, %v ; attendu %d", tt.raw, got, err, tt.want)
+		}
+	}
+}
+
 func TestCentsString(t *testing.T) {
 	tests := []struct {
 		c    Cents
