@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/madoxSio/go-cli-market/internal/frame"
+	"github.com/madoxSio/go-cli-market/internal/market"
 )
 
 func (m *model) loginForm() *huh.Form {
@@ -66,6 +67,49 @@ func (m *model) editForm() *huh.Form {
 	))
 }
 
+func (m *model) productForm() *huh.Form {
+	return m.finish(huh.NewGroup(
+		huh.NewInput().
+			Title("Nom").
+			CharLimit(200).
+			Value(&m.data.name).
+			Validate(requiredField("nom requis")),
+		huh.NewInput().
+			Title("Description").
+			Description("Facultative.").
+			CharLimit(2000).
+			Value(&m.data.description),
+		huh.NewInput().
+			Title("Catégorie").
+			CharLimit(100).
+			Value(&m.data.category).
+			Validate(requiredField("catégorie requise")),
+		huh.NewInput().
+			Title("Prix HT").
+			Description("En euros, exemple 49,99. La TVA est ajoutée ensuite.").
+			Value(&m.data.price).
+			Validate(func(value string) error {
+				cents, err := market.ParseEuros(value)
+				if err != nil {
+					return err
+				}
+				if cents <= 0 {
+					return errors.New("le prix doit être supérieur à 0")
+				}
+				return nil
+			}),
+		huh.NewSelect[int64]().
+			Title("TVA").
+			Options(
+				huh.NewOption("20 %", int64(market.VATStandard)),
+				huh.NewOption("10 %", int64(market.VATIntermediate)),
+				huh.NewOption("5,5 %", int64(market.VATReduced)),
+				huh.NewOption("2,1 %", int64(market.VATSuper)),
+			).
+			Value(&m.data.vat),
+	))
+}
+
 func (m *model) deleteForm() *huh.Form {
 	return m.finish(huh.NewGroup(
 		huh.NewConfirm().
@@ -100,6 +144,15 @@ func validatePasswordField(value string) error {
 		return errors.New("8 caractères minimum")
 	}
 	return nil
+}
+
+func requiredField(message string) func(string) error {
+	return func(value string) error {
+		if strings.TrimSpace(value) == "" {
+			return errors.New(message)
+		}
+		return nil
+	}
 }
 
 func optionalPassword(value string) error {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/madoxSio/go-cli-market/internal/apiclient"
 	"github.com/madoxSio/go-cli-market/internal/frame"
+	"github.com/madoxSio/go-cli-market/internal/market"
 )
 
 type screen int
@@ -36,6 +37,7 @@ const (
 	actDelete
 	actConfirm
 	actLogout
+	actProduct
 )
 
 type menuItem struct {
@@ -45,13 +47,17 @@ type menuItem struct {
 type formData struct {
 	email, password, role string
 	confirmed             bool
+	name, description     string
+	category, price       string
+	vat                   int64
 }
 
 type doneMsg struct {
-	kind  action
-	user  apiclient.User
-	users []apiclient.User
-	err   error
+	kind    action
+	user    apiclient.User
+	users   []apiclient.User
+	product market.Product
+	err     error
 }
 
 type model struct {
@@ -281,6 +287,13 @@ func (m *model) activate(id string) (tea.Model, tea.Cmd) {
 	switch id {
 	case "users":
 		return m.loadUsers()
+	case "product":
+		m.data.name = ""
+		m.data.description = ""
+		m.data.category = ""
+		m.data.price = ""
+		m.data.vat = int64(market.VATStandard)
+		return m.showForm(actProduct, "Nouveau produit", screenMenu, m.productForm())
 	case "help":
 		m.screen = screenHelp
 		m.renderHelp()
@@ -407,6 +420,12 @@ func (m *model) onDone(msg doneMsg) (tea.Model, tea.Cmd) {
 		m.status = successText(msg.kind)
 		m.statusOK = true
 		return m.loadUsers()
+	case actProduct:
+		m.status = "Produit créé · " + msg.product.Ref
+		m.statusOK = true
+		m.screen = screenMenu
+		m.useMainMenu()
+		return *m, nil
 	case actLogout:
 		m.signOut()
 		m.status = "Session fermée"
@@ -446,6 +465,20 @@ func (m *model) submit() tea.Cmd {
 			return doneMsg{kind: kind, err: err}
 		case actLogout:
 			return doneMsg{kind: kind, err: api.Logout(ctx)}
+		case actProduct:
+			price, err := market.ParseEuros(data.price)
+			if err != nil {
+				return doneMsg{kind: kind, err: err}
+			}
+			vat := market.BasisPoints(data.vat)
+			product, err := api.CreateProduct(ctx, market.ProductInput{
+				Name:        data.name,
+				Description: data.description,
+				Category:    data.category,
+				PriceHT:     price,
+				VATRate:     &vat,
+			})
+			return doneMsg{kind: kind, product: product, err: err}
 		default:
 			return doneMsg{kind: kind}
 		}
@@ -474,6 +507,7 @@ func (m *model) signOut() {
 func (m *model) useMainMenu() {
 	m.setMenu([]menuItem{
 		{id: "users", title: "Comptes", desc: "Créer, modifier, confirmer"},
+		{id: "product", title: "Nouveau produit", desc: "Nom, prix, TVA, identifiant PDT-"},
 		{id: "help", title: "Aide", desc: "Rôle de cette application"},
 		{id: "logout", title: "Se déconnecter", desc: "Ferme la session"},
 		{id: "quit", title: "Quitter", desc: "Fermer l'application"},
@@ -649,6 +683,8 @@ func loadingText(kind action) string {
 		return "Suppression..."
 	case actLogout:
 		return "Fermeture de la session..."
+	case actProduct:
+		return "Création du produit..."
 	default:
 		return "Échange avec le serveur..."
 	}
