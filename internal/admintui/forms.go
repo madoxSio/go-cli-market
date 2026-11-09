@@ -2,10 +2,12 @@ package admintui
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/madoxSio/go-cli-market/internal/apiclient"
 	"github.com/madoxSio/go-cli-market/internal/frame"
 	"github.com/madoxSio/go-cli-market/internal/market"
 )
@@ -110,6 +112,71 @@ func (m *model) productForm() *huh.Form {
 	))
 }
 
+func (m *model) orderForm(clients []apiclient.User, products []market.Product) *huh.Form {
+	clientOptions := make([]huh.Option[int64], 0, len(clients))
+	for _, user := range clients {
+		clientOptions = append(clientOptions, huh.NewOption(user.Email, user.ID))
+	}
+	productOptions := make([]huh.Option[string], 0, len(products))
+	for _, product := range products {
+		label := product.Name + " · " + product.PriceTTC.String() + " TTC"
+		productOptions = append(productOptions, huh.NewOption(label, product.Ref))
+	}
+	return m.finish(
+		huh.NewGroup(
+			huh.NewSelect[int64]().
+				Title("Client").
+				Options(clientOptions...).
+				Height(8).
+				Value(&m.data.userID),
+		),
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Produits").
+				Description("Espace pour cocher, entrée pour valider.").
+				Options(productOptions...).
+				Height(8).
+				Value(&m.data.productRefs).
+				Validate(func(refs []string) error {
+					if len(refs) == 0 {
+						return errors.New("choisissez au moins un produit")
+					}
+					return nil
+				}),
+			huh.NewInput().
+				Title("Quantité").
+				Description("Appliquée à chaque produit choisi.").
+				Value(&m.data.quantity).
+				Validate(validateQuantityField),
+		),
+	)
+}
+
+func (m *model) statusForm(next []market.OrderStatus) *huh.Form {
+	options := make([]huh.Option[market.OrderStatus], 0, len(next))
+	for _, status := range next {
+		options = append(options, huh.NewOption(status.Label(), status))
+	}
+	return m.finish(
+		huh.NewGroup(
+			huh.NewSelect[market.OrderStatus]().
+				Title("Nouveau statut").
+				Description("Actuel : "+m.selectedOrder.Status.Label()).
+				Options(options...).
+				Value(&m.data.status),
+		),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Raison de l'annulation").
+				CharLimit(500).
+				Value(&m.data.reason).
+				Validate(requiredField("raison requise")),
+		).WithHideFunc(func() bool {
+			return m.data.status != market.StatusCancelled
+		}),
+	)
+}
+
 func (m *model) deleteForm() *huh.Form {
 	return m.finish(huh.NewGroup(
 		huh.NewConfirm().
@@ -153,6 +220,14 @@ func requiredField(message string) func(string) error {
 		}
 		return nil
 	}
+}
+
+func validateQuantityField(value string) error {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return errors.New("nombre entier attendu")
+	}
+	return market.ValidateQuantity(n)
 }
 
 func optionalPassword(value string) error {
