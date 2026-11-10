@@ -89,6 +89,32 @@ func (c *Client) Orders(ctx context.Context) ([]market.Order, error) {
 	return orders, err
 }
 
+// AllOrders liste les commandes de tous les clients. Réservé à un administrateur.
+func (c *Client) AllOrders(ctx context.Context) ([]market.Order, error) {
+	var orders []market.Order
+	err := c.do(ctx, http.MethodGet, "/admin/orders", nil, &orders, true)
+	if orders == nil {
+		orders = []market.Order{}
+	}
+	return orders, err
+}
+
+// CreateOrder crée une commande « en attente » pour un client. Réservé à un administrateur.
+func (c *Client) CreateOrder(ctx context.Context, userID int64, items []api.ItemRequest) (market.Order, error) {
+	var order market.Order
+	req := api.CreateOrderRequest{UserID: userID, Items: items}
+	err := c.do(ctx, http.MethodPost, "/admin/orders", req, &order, true)
+	return order, err
+}
+
+// UpdateOrderStatus change le statut d'une commande. La raison est obligatoire pour une annulation.
+func (c *Client) UpdateOrderStatus(ctx context.Context, ref string, status market.OrderStatus, reason string) (market.Order, error) {
+	var order market.Order
+	req := api.UpdateStatusRequest{Status: status, Reason: reason}
+	err := c.do(ctx, http.MethodPatch, "/admin/orders/"+url.PathEscape(ref)+"/status", req, &order, true)
+	return order, err
+}
+
 func setCents(query url.Values, key string, value *market.Cents) {
 	if value == nil {
 		return

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
+	"github.com/madoxSio/go-cli-market/internal/api"
 	"github.com/madoxSio/go-cli-market/internal/apiclient"
 	"github.com/madoxSio/go-cli-market/internal/frame"
 	"github.com/madoxSio/go-cli-market/internal/market"
@@ -25,6 +27,8 @@ const (
 	screenForm
 	screenHelp
 	screenLoading
+	screenOrders
+	screenOrder
 )
 
 type action int
@@ -38,7 +42,19 @@ const (
 	actConfirm
 	actLogout
 	actProduct
+	actOrders
+	actPrepareOrder
+	actCreateOrder
+	actStatus
 )
+
+var allStatuses = []market.OrderStatus{
+	market.StatusPending,
+	market.StatusPaid,
+	market.StatusShipping,
+	market.StatusDelivered,
+	market.StatusCancelled,
+}
 
 type menuItem struct {
 	id, title, desc string
@@ -50,14 +66,22 @@ type formData struct {
 	name, description     string
 	category, price       string
 	vat                   int64
+	userID                int64
+	productRefs           []string
+	quantity              string
+	status                market.OrderStatus
+	reason                string
 }
 
 type doneMsg struct {
-	kind    action
-	user    apiclient.User
-	users   []apiclient.User
-	product market.Product
-	err     error
+	kind     action
+	user     apiclient.User
+	users    []apiclient.User
+	product  market.Product
+	products []market.Product
+	order    market.Order
+	orders   []market.Order
+	err      error
 }
 
 type model struct {
@@ -79,8 +103,11 @@ type model struct {
 	session  apiclient.User
 	users    []apiclient.User
 	selected apiclient.User
-	help     viewport.Model
-	loading  string
+	orders   []market.Order
+	// selectedOrder est la commande affichée dans l'écran de détail.
+	selectedOrder market.Order
+	help          viewport.Model
+	loading       string
 }
 
 // NewModel construit l'écran d'administration.
@@ -141,13 +168,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateForm(msg)
 	case screenForm:
 		if key, ok := msg.(tea.KeyMsg); ok && key.String() == "esc" {
-			m.screen = m.back
-			if m.screen == screenUsers {
-				m.useUserList()
-			}
-			if m.screen == screenUser {
-				m.useUserMenu()
-			}
+			m.restore(m.back)
 			return m, nil
 		}
 		return m.updateForm(msg)
@@ -180,6 +201,15 @@ func (m model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen == screenUser {
 			return m.showUsers()
+		}
+		if m.screen == screenOrders {
+			m.screen = screenMenu
+			m.useMainMenu()
+			return m, nil
+		}
+		if m.screen == screenOrder {
+			m.restore(screenOrders)
+			return m, nil
 		}
 	case "up", "k":
 		m.move(-m.columns())
@@ -227,6 +257,10 @@ func (m model) heading() string {
 			return m.selected.Email
 		}
 		return "Compte"
+	case screenOrders:
+		return "Commandes"
+	case screenOrder:
+		return m.selectedOrder.Ref
 	default:
 		if m.authed && m.session.Email != "" {
 			return m.session.Email
@@ -240,7 +274,11 @@ func (m model) tagline() string {
 	case screenLogin:
 		return "Réservé aux administrateurs"
 	case screenMenu:
-		return "Gestion des comptes"
+		return "Comptes, produits et commandes"
+	case screenOrders:
+		return "Commandes de tous les clients"
+	case screenOrder:
+		return m.selectedOrder.UserEmail + " · " + m.selectedOrder.Status.Label()
 	case screenUser:
 		if m.selected.Role == "" {
 			return ""
@@ -277,7 +315,7 @@ func (m *model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openLogin()
 			return *m, m.form.Init()
 		}
-		m.screen = m.back
+		m.restore(m.back)
 		return *m, nil
 	}
 	return *m, cmd
@@ -326,7 +364,42 @@ func (m *model) activate(id string) (tea.Model, tea.Cmd) {
 		return m.showForm(actDelete, "Suppression", screenUser, m.deleteForm())
 	case "back":
 		return m.showUsers()
+	case "orders":
+		return m.loadOrders()
+	case "new-order":
+		// On charge d'abord les clients et les produits pour remplir le formulaire.
+		m.pending = actPrepareOrder
+		m.back = screenOrders
+		m.screen = screenLoading
+		m.loading = loadingText(actPrepareOrder)
+		return *m, tea.Batch(m.spinner.Tick, m.submit())
+	case "status":
+		next := nextStatuses(m.selectedOrder.Status)
+		if len(next) == 0 {
+			return *m, nil
+		}
+		m.data.status = next[0]
+		m.data.reason = ""
+		return m.showForm(actStatus, "Statut de "+m.selectedOrder.Ref, screenOrder, m.statusForm(next))
+	case "back-orders":
+		m.restore(screenOrders)
+		return *m, nil
+	case "home":
+		m.screen = screenMenu
+		m.useMainMenu()
+		return *m, nil
 	default:
+		if strings.HasPrefix(id, "order:") {
+			ref := strings.TrimPrefix(id, "order:")
+			for _, order := range m.orders {
+				if order.Ref == ref {
+					m.selectedOrder = order
+					m.restore(screenOrder)
+					return *m, nil
+				}
+			}
+			return *m, nil
+		}
 		if len(id) > 5 && id[:5] == "user:" {
 			userID, err := strconv.ParseInt(id[5:], 10, 64)
 			if err != nil {
@@ -369,6 +442,29 @@ func (m *model) showUsers() (tea.Model, tea.Cmd) {
 	return *m, nil
 }
 
+func (m *model) loadOrders() (tea.Model, tea.Cmd) {
+	m.pending = actOrders
+	m.back = screenMenu
+	m.screen = screenLoading
+	m.loading = loadingText(actOrders)
+	return *m, tea.Batch(m.spinner.Tick, m.submit())
+}
+
+// restore revient sur un écran de liste et reconstruit ses cartes.
+func (m *model) restore(s screen) {
+	m.screen = s
+	switch s {
+	case screenUsers:
+		m.useUserList()
+	case screenUser:
+		m.useUserMenu()
+	case screenOrders:
+		m.useOrderList()
+	case screenOrder:
+		m.useOrderMenu()
+	}
+}
+
 func (m *model) onDone(msg doneMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.status = msg.err.Error()
@@ -381,13 +477,11 @@ func (m *model) onDone(msg doneMsg) (tea.Model, tea.Cmd) {
 			m.signOut()
 			return *m, m.form.Init()
 		}
-		m.screen = m.back
-		switch m.screen {
-		case screenUsers:
-			m.useUserList()
-		case screenUser:
-			m.useUserMenu()
+		switch m.back {
+		case screenUsers, screenUser, screenOrders, screenOrder:
+			m.restore(m.back)
 		case screenMenu:
+			m.screen = screenMenu
 			m.useMainMenu()
 		default:
 			m.openLogin()
@@ -431,6 +525,36 @@ func (m *model) onDone(msg doneMsg) (tea.Model, tea.Cmd) {
 		m.status = "Session fermée"
 		m.statusOK = true
 		return *m, m.form.Init()
+	case actOrders:
+		m.orders = msg.orders
+		m.restore(screenOrders)
+		return *m, nil
+	case actPrepareOrder:
+		// Une commande se crée pour un client, pas pour un administrateur.
+		var clients []apiclient.User
+		for _, user := range msg.users {
+			if user.Role == "client" {
+				clients = append(clients, user)
+			}
+		}
+		if len(clients) == 0 || len(msg.products) == 0 {
+			m.status = "Il faut au moins un client et un produit pour créer une commande."
+			m.statusOK = false
+			m.restore(screenOrders)
+			return *m, nil
+		}
+		m.data.userID = clients[0].ID
+		m.data.productRefs = nil
+		m.data.quantity = "1"
+		return m.showForm(actCreateOrder, "Nouvelle commande", screenOrders, m.orderForm(clients, msg.products))
+	case actCreateOrder:
+		m.status = "Commande créée · " + msg.order.Ref
+		m.statusOK = true
+		return m.loadOrders()
+	case actStatus:
+		m.status = msg.order.Ref + " : " + msg.order.Status.Label()
+		m.statusOK = true
+		return m.loadOrders()
 	default:
 		m.screen = screenMenu
 		return *m, nil
@@ -441,37 +565,38 @@ func (m *model) submit() tea.Cmd {
 	kind := m.pending
 	data := *m.data
 	selected := m.selected
-	api := m.api
+	selectedOrder := m.selectedOrder
+	client := m.api
 	return func() tea.Msg {
 		ctx := context.Background()
 		switch kind {
 		case actLogin:
-			user, err := api.Login(ctx, data.email, data.password)
+			user, err := client.Login(ctx, data.email, data.password)
 			return doneMsg{kind: kind, user: user, err: err}
 		case actList:
-			users, err := api.ListUsers(ctx)
+			users, err := client.ListUsers(ctx)
 			return doneMsg{kind: kind, users: users, err: err}
 		case actCreate:
-			user, err := api.CreateUser(ctx, data.email, data.password, data.role, data.confirmed)
+			user, err := client.CreateUser(ctx, data.email, data.password, data.role, data.confirmed)
 			return doneMsg{kind: kind, user: user, err: err}
 		case actUpdate:
-			user, err := api.UpdateUser(ctx, selected.ID, data.email, data.password, data.role)
+			user, err := client.UpdateUser(ctx, selected.ID, data.email, data.password, data.role)
 			return doneMsg{kind: kind, user: user, err: err}
 		case actConfirm:
-			err := api.ConfirmUser(ctx, selected.ID)
+			err := client.ConfirmUser(ctx, selected.ID)
 			return doneMsg{kind: kind, err: err}
 		case actDelete:
-			err := api.DeleteUser(ctx, selected.ID)
+			err := client.DeleteUser(ctx, selected.ID)
 			return doneMsg{kind: kind, err: err}
 		case actLogout:
-			return doneMsg{kind: kind, err: api.Logout(ctx)}
+			return doneMsg{kind: kind, err: client.Logout(ctx)}
 		case actProduct:
 			price, err := market.ParseEuros(data.price)
 			if err != nil {
 				return doneMsg{kind: kind, err: err}
 			}
 			vat := market.BasisPoints(data.vat)
-			product, err := api.CreateProduct(ctx, market.ProductInput{
+			product, err := client.CreateProduct(ctx, market.ProductInput{
 				Name:        data.name,
 				Description: data.description,
 				Category:    data.category,
@@ -479,6 +604,34 @@ func (m *model) submit() tea.Cmd {
 				VATRate:     &vat,
 			})
 			return doneMsg{kind: kind, product: product, err: err}
+		case actOrders:
+			orders, err := client.AllOrders(ctx)
+			return doneMsg{kind: kind, orders: orders, err: err}
+		case actPrepareOrder:
+			users, err := client.ListUsers(ctx)
+			if err != nil {
+				return doneMsg{kind: kind, err: err}
+			}
+			products, err := client.SearchProducts(ctx, market.ProductFilter{})
+			return doneMsg{kind: kind, users: users, products: products, err: err}
+		case actCreateOrder:
+			quantity, err := strconv.Atoi(strings.TrimSpace(data.quantity))
+			if err != nil {
+				return doneMsg{kind: kind, err: err}
+			}
+			items := make([]api.ItemRequest, 0, len(data.productRefs))
+			for _, ref := range data.productRefs {
+				items = append(items, api.ItemRequest{ProductRef: ref, Quantity: quantity})
+			}
+			order, err := client.CreateOrder(ctx, data.userID, items)
+			return doneMsg{kind: kind, order: order, err: err}
+		case actStatus:
+			reason := ""
+			if data.status == market.StatusCancelled {
+				reason = data.reason
+			}
+			order, err := client.UpdateOrderStatus(ctx, selectedOrder.Ref, data.status, reason)
+			return doneMsg{kind: kind, order: order, err: err}
 		default:
 			return doneMsg{kind: kind}
 		}
@@ -500,6 +653,8 @@ func (m *model) signOut() {
 	m.authed = false
 	m.session = apiclient.User{}
 	m.users = nil
+	m.orders = nil
+	m.selectedOrder = market.Order{}
 	m.api.SetToken("")
 	m.openLogin()
 }
@@ -508,6 +663,7 @@ func (m *model) useMainMenu() {
 	m.setMenu([]menuItem{
 		{id: "users", title: "Comptes", desc: "Créer, modifier, confirmer"},
 		{id: "product", title: "Nouveau produit", desc: "Nom, prix, TVA, identifiant PDT-"},
+		{id: "orders", title: "Commandes", desc: "Lister, créer, changer le statut"},
 		{id: "help", title: "Aide", desc: "Rôle de cette application"},
 		{id: "logout", title: "Se déconnecter", desc: "Ferme la session"},
 		{id: "quit", title: "Quitter", desc: "Fermer l'application"},
@@ -541,6 +697,59 @@ func (m *model) useUserMenu() {
 		menuItem{id: "back", title: "Retour", desc: "Liste des comptes"},
 	)
 	m.setMenu(items)
+}
+
+// useOrderList affiche une carte par commande, après la carte de création.
+func (m *model) useOrderList() {
+	items := []menuItem{{id: "new-order", title: "Nouvelle commande", desc: "Pour un client existant"}}
+	for _, order := range m.orders {
+		items = append(items, menuItem{
+			id:    "order:" + order.Ref,
+			title: order.Ref,
+			desc:  order.UserEmail + " · " + order.Status.Label() + " · " + order.TotalTTC.String(),
+		})
+	}
+	items = append(items, menuItem{id: "home", title: "Accueil", desc: "Retour au menu"})
+	m.setMenu(items)
+	m.screen = screenOrders
+}
+
+// useOrderMenu affiche le détail d'une commande : statut, raison d'annulation et produits.
+func (m *model) useOrderMenu() {
+	order := m.selectedOrder
+	var items []menuItem
+	if len(nextStatuses(order.Status)) > 0 {
+		items = append(items, menuItem{id: "status", title: "Changer le statut", desc: "Actuel : " + order.Status.Label()})
+	}
+	if order.Status == market.StatusCancelled {
+		items = append(items, menuItem{id: "info", title: "Annulée", desc: order.CancelReason})
+	}
+	items = append(items, menuItem{
+		id:    "info",
+		title: "Total " + order.TotalTTC.String(),
+		desc:  "Créée le " + order.CreatedAt.Local().Format("02/01/2006"),
+	})
+	for _, item := range order.Items {
+		items = append(items, menuItem{
+			id:    "info",
+			title: item.Name,
+			desc:  fmt.Sprintf("%d × %s = %s", item.Quantity, item.UnitPriceTTC, item.LineTTC),
+		})
+	}
+	items = append(items, menuItem{id: "back-orders", title: "Retour", desc: "Liste des commandes"})
+	m.setMenu(items)
+	m.screen = screenOrder
+}
+
+// nextStatuses renvoie les statuts vers lesquels une commande peut passer.
+func nextStatuses(current market.OrderStatus) []market.OrderStatus {
+	var next []market.OrderStatus
+	for _, status := range allStatuses {
+		if market.CanTransition(current, status) {
+			next = append(next, status)
+		}
+	}
+	return next
 }
 
 func (m *model) renderHelp() {
@@ -685,6 +894,14 @@ func loadingText(kind action) string {
 		return "Fermeture de la session..."
 	case actProduct:
 		return "Création du produit..."
+	case actOrders:
+		return "Chargement des commandes..."
+	case actPrepareOrder:
+		return "Chargement des clients et des produits..."
+	case actCreateOrder:
+		return "Création de la commande..."
+	case actStatus:
+		return "Changement du statut..."
 	default:
 		return "Échange avec le serveur..."
 	}
